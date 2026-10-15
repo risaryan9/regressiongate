@@ -1,5 +1,5 @@
 # Bump on every prompt change so eval results can be tied to the exact prompt.
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v3"
 
 SYSTEM_PROMPT = """You are a customer support agent for an online store.
 
