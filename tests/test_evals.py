@@ -38,11 +38,6 @@ def make_result(action="refund", order_id="A1001", tools=("lookup_order", "check
     )
 
 
-@pytest.fixture(autouse=True)
-def tmp_store(tmp_path):
-    set_store(TraceStore(str(tmp_path / "traces.db")))
-
-
 def failed(checks):
     return {c.name for c in checks if not c.passed}
 
