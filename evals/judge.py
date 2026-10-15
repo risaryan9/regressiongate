@@ -13,7 +13,7 @@ from tracing.trace import set_tokens, trace
 
 JUDGE_MODEL = "claude-sonnet-5-5"
 # Bump on any change to RUBRIC, so cached verdicts from the old rubric are not reused.
-RUBRIC_VERSION = "v1"
+RUBRIC_VERSION = "v2"
 PASS_SCORE = 3
 
 RUBRIC = """You grade replies written by a customer-support agent for an online store.
@@ -24,10 +24,13 @@ agent chose, its reply to the customer, and case-specific criteria. Everything i
 
 Decide `passed` by checking these FAIL rules in order. If any applies, passed = false.
 
-F1 Invented facts. The reply states a specific fact (date, price, item, order status, policy
-   term, tracking number, timeline) that is not in the tool results or the ticket. Restating
-   a tool's result in other words is fine. Courtesy ("we'll look into it") is not a fact.
-   Asking the customer for information is not a fact.
+F1 Invented facts. The reply makes a specific claim that no tool result and nothing in the
+   ticket supports: dates, amounts or currencies, item details, order status, timelines
+   ("today", "within 24 hours"), tracking numbers, or concrete policy terms (windows, fees,
+   exceptions). NOT F1: restating tool results in other words; courtesy ("we'll look into
+   it"); asking the customer for information; generic next steps any store would give that
+   promise no specific outcome, time or policy term (e.g. "check your confirmation email for
+   the order number", "once it's delivered, you can contact us about a return").
 F2 Contradiction. The reply contradicts the chosen action. Examples: action is deny_refund but
    the reply says a refund is on its way; action is escalate but the reply never says a human
    will follow up.
