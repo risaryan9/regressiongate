@@ -1,0 +1,8 @@
+{
+  "name": "support",
+  "description": "Support-ticket agent cases: refunds, denials, status, escalation, messy input, injection.",
+  "version": 3,
+  "schema_version": 1,
+  "row_count": 25,
+  "sha256": "66744e92f1a3fe017357f13551eeda148a3711e579daddd91b4b2e00ba9a7def"
+}
