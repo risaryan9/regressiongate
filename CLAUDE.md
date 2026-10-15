@@ -80,8 +80,9 @@ Every span stores: `trace_id, span_id, parent_id, run_id, name, kind (eval|agent
   - CI runs with `--require-baseline`, so a missing baseline fails instead of skipping the regression check.
   - A PR that changes the dataset must save the new baseline (`--save-baseline --repeats 3`) in the same PR.
   - Never change the dataset and the prompt/model in the same PR: the new baseline would be measured with the new prompt and hide the regression.
-- Baseline and new run must use the same `--repeats` (default 1 for dev, 3 for CI and baselines), or the comparison is refused.
-- A run **fails (exit code 1)** if pass rate drops more than the threshold vs baseline (default 5 percentage points), or if cost or p95 latency exceed budget.
+- Baseline and new run must use the same `--repeats` (default 1 for dev, 3 for CI and baselines), judge model, rubric version, judge effort and scoring version, or the comparison is refused.
+- Pass rate is counted over all attempts (cases × repeats), not per-case majority votes, to keep noise down.
+- A run **fails (exit code 1)** if pass rate drops more than the threshold vs baseline (default 10 percentage points, about the run-to-run noise of 25 cases), if any case went from passing every repeat in the baseline to failing every repeat (hard regression, needs repeats > 1), or if cost or p95 latency exceed budget.
 
 ## Who writes what
 
