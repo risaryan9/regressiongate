@@ -22,4 +22,4 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 # Flat layout: top-level packages and cli.py live at the repo root, not under src/.
-only-include = ["agent", "tracing", "cli.py"]
+only-include = ["agent", "tracing", "datasets", "cli.py"]
