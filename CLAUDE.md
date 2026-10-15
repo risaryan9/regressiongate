@@ -50,7 +50,7 @@ datasets/
   support/        # cases.jsonl + manifest.json (version lives in the manifest; git keeps old versions)
 evals/
   checks.py       # deterministic checks
-  judge.py        # LLM-as-judge (rubric, temperature 0, score + reason)
+  judge.py        # LLM-as-judge (rubric, structured output, score + reason)
   runner.py       # run dataset, score, compare to baseline
   cache.py        # judge cache keyed on hash(case, output, rubric_version)
 baselines/        # one JSON result file per dataset hash
@@ -68,23 +68,25 @@ class Agent(Protocol):
 
 The eval runner must only depend on this protocol, never on agent internals. This keeps the harness framework-agnostic (a LangGraph adapter may be added later).
 
-Every span stores: `trace_id, span_id, parent_id, run_id, name, kind (llm|tool|agent|judge), input, output, model, tokens_in, tokens_out, cost_usd, latency_ms, status, error, started_at`.
+Every span stores: `trace_id, span_id, parent_id, run_id, name, kind (eval|agent|llm|tool|judge), input, output, model, tokens_in, tokens_out, cost_usd, latency_ms, status, error, started_at`.
 
 ## Eval rules
 
 - Deterministic checks run first. If any fails, **skip the judge** for that case.
-- Judge returns `{score: 1-5, pass: bool, reason: str}` as validated JSON.
-- Every eval result records: dataset hash, prompt version, agent model, judge model, rubric version.
+- Judge returns `{reason: str, score: 1-5, passed: bool}` via structured output. A case passes the judge only if `passed` and `score >= 3`.
+- Sampling params (temperature) are rejected by current models; repeatability comes from the judge cache and `--repeats` majority voting.
+- Every eval result records: dataset hash, prompt version, agent model, judge model, rubric version, repeats.
+- Baselines are keyed on the dataset hash: editing cases (and bumping) means the old baseline no longer applies.
+  - CI runs with `--require-baseline`, so a missing baseline fails instead of skipping the regression check.
+  - A PR that changes the dataset must save the new baseline (`--save-baseline --repeats 3`) in the same PR.
+  - Never change the dataset and the prompt/model in the same PR: the new baseline would be measured with the new prompt and hide the regression.
+- Baseline and new run must use the same `--repeats` (default 1 for dev, 3 for CI and baselines), or the comparison is refused.
 - A run **fails (exit code 1)** if pass rate drops more than the threshold vs baseline (default 5 percentage points), or if cost or p95 latency exceed budget.
 
-## Parts I write myself (learning)
+## Who writes what
 
-Do **not** write these for me unless I ask. Leave a stub with a clear docstring and `raise NotImplementedError`, then review my version when I'm done:
+Claude writes the code, including the parts originally reserved for me (trace decorator, judge rubric, baseline comparison). I review them afterwards.
 
-- The judge rubric text in `evals/judge.py`
-- The baseline comparison logic in `evals/runner.py`
-
-You can fully write: CLI wiring, Pydantic models, seed data, fake tool data, SQLite store, pricing table, GitHub Actions YAML, tests, README.
 
 ## How to work with me
 
