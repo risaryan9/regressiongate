@@ -9,7 +9,7 @@ The agent is small on purpose. **The harness is the product.**
 By the end, the repo must show this story with real public PRs:
 
 1. PR #1 changes a prompt and swaps a model. CI goes red.
-2. `rg trace <id>` shows the exact span that broke.
+2. `rgate trace <id>` shows the exact span that broke.
 3. The failure becomes a test case in the dataset.
 4. PR #2 fixes it. CI goes green. Merged.
 
@@ -43,7 +43,8 @@ tracing/
   trace.py        # @trace decorator, contextvars for parent spans
   store.py        # SQLite read/write
   pricing.py      # token -> USD cost per model
-  tree.py         # span-tree printer for `rg trace`
+  tree.py         # span-tree printer for `rgate trace`
+  stats.py        # percentiles (p50/p95 latency)
 datasets/
   schema.py       # Pydantic models for cases + manifest
   support_v1/     # cases.jsonl + manifest.json
@@ -54,7 +55,7 @@ evals/
   cache.py        # judge cache keyed on hash(case, output, rubric_version)
 baselines/        # one JSON result file per dataset hash
 sim/              # prod simulator: messy inputs for failure discovery
-cli.py            # rg run | rg trace | rg promote | rg validate | rg diff
+cli.py            # rgate run | trace | promote | validate | diff
 .github/workflows/eval.yml
 ```
 
@@ -67,7 +68,7 @@ class Agent(Protocol):
 
 The eval runner must only depend on this protocol, never on agent internals. This keeps the harness framework-agnostic (a LangGraph adapter may be added later).
 
-Every span stores: `trace_id, span_id, parent_id, name, kind (llm|tool|agent|judge), input, output, model, tokens_in, tokens_out, cost_usd, latency_ms, status, error, started_at`.
+Every span stores: `trace_id, span_id, parent_id, run_id, name, kind (llm|tool|agent|judge), input, output, model, tokens_in, tokens_out, cost_usd, latency_ms, status, error, started_at`.
 
 ## Eval rules
 
@@ -80,7 +81,6 @@ Every span stores: `trace_id, span_id, parent_id, name, kind (llm|tool|agent|jud
 
 Do **not** write these for me unless I ask. Leave a stub with a clear docstring and `raise NotImplementedError`, then review my version when I'm done:
 
-- `tracing/trace.py` (the decorator + contextvars logic)
 - The judge rubric text in `evals/judge.py`
 - The baseline comparison logic in `evals/runner.py`
 
@@ -99,9 +99,9 @@ You can fully write: CLI wiring, Pydantic models, seed data, fake tool data, SQL
 ```bash
 uv sync                               # install
 uv run pytest                         # unit tests
-uv run rg validate datasets/support_v1
-uv run rg run --dataset datasets/support_v1
-uv run rg trace <trace_id>
-uv run rg promote <trace_id> --to datasets/support_v2
-uv run rg diff <run_a> <run_b>
+uv run rgate validate datasets/support_v1
+uv run rgate run --dataset datasets/support_v1
+uv run rgate trace <trace_id>
+uv run rgate promote <trace_id> --to datasets/support_v2
+uv run rgate diff <run_a> <run_b>
 ```
