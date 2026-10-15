@@ -72,13 +72,18 @@ class RunMeta(BaseModel):
     rubric_version: str
     judge_effort: str = "medium"  # baselines saved before this field existed used medium
     repeats: int
+    # 1 = pass rate from per-case majority votes; 2 = pass rate over all attempts.
+    # Baselines saved before this field existed were scored the old way, hence the default.
+    scoring_version: int = 1
 
 
 class RunResult(BaseModel):
     meta: RunMeta
-    pass_rate: float  # percent, 0-100
-    passed: int
-    total: int
+    pass_rate: float  # percent of attempts that passed, 0-100
+    passed: int  # cases passing by majority vote
+    total: int  # cases
+    attempts_passed: int = 0
+    attempts_total: int = 0
     agent_cost_usd: float
     judge_cost_usd: float
     p50_latency_ms: float | None
@@ -95,6 +100,9 @@ class Comparison(BaseModel):
     pass_rate_delta: float | None = None  # points vs baseline; None when there is no baseline
     newly_failing: list[str] = []
     newly_passing: list[str] = []
+
+
+SCORING_VERSION = 2
 
 
 class NotComparable(Exception):
@@ -143,6 +151,7 @@ def run_dataset(
     all_attempts = [a for o in outcomes for a in o.attempts]
     latencies = [a.latency_ms for a in all_attempts]
     passed = sum(o.passed for o in outcomes)
+    attempts_passed = sum(a.passed for a in all_attempts)
 
     return RunResult(
         meta=RunMeta(
@@ -157,10 +166,15 @@ def run_dataset(
             rubric_version=judge.rubric_version,
             judge_effort=judge.effort,
             repeats=repeats,
+            scoring_version=SCORING_VERSION,
         ),
-        pass_rate=100 * passed / len(outcomes) if outcomes else 0.0,
+        # Scored per attempt, not per majority vote: a flaky 2/3 case counts as 67% instead of
+        # flipping the whole case between 0 and 100, which keeps run-to-run noise down.
+        pass_rate=100 * attempts_passed / len(all_attempts) if all_attempts else 0.0,
         passed=passed,
         total=len(outcomes),
+        attempts_passed=attempts_passed,
+        attempts_total=len(all_attempts),
         agent_cost_usd=sum(a.agent_cost_usd for a in all_attempts),
         judge_cost_usd=sum(a.judge.cost_usd for a in all_attempts if a.judge),
         p50_latency_ms=percentile(latencies, 0.50),
@@ -244,6 +258,17 @@ def compare(
         raise NotComparable(
             f"baseline used --repeats {baseline.meta.repeats}, this run used --repeats {run.meta.repeats}; "
             "rerun with the same repeats"
+        )
+    b, r = baseline.meta, run.meta
+    if b.scoring_version != r.scoring_version:
+        raise NotComparable(
+            f"baseline was scored with scoring v{b.scoring_version}, this run with v{r.scoring_version}; "
+            "re-save the baseline"
+        )
+    if (b.judge_model, b.rubric_version, b.judge_effort) != (r.judge_model, r.rubric_version, r.judge_effort):
+        raise NotComparable(
+            f"baseline was judged by {b.judge_model} rubric {b.rubric_version} effort {b.judge_effort}, this run by "
+            f"{r.judge_model} rubric {r.rubric_version} effort {r.judge_effort}; re-save the baseline with the current judge"
         )
 
     delta = run.pass_rate - baseline.pass_rate

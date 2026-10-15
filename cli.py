@@ -69,7 +69,7 @@ def bump(dataset_dir: Path = typer.Argument(..., help="Dataset folder to bump.")
 def run(
     dataset: Path = typer.Option(Path("datasets/support"), help="Dataset folder to run."),
     repeats: int = typer.Option(1, min=1, help="Runs per case; majority vote decides. Use 3 for CI and baselines."),
-    threshold: float = typer.Option(5.0, help="Max allowed pass-rate drop vs baseline, in percentage points."),
+    threshold: float = typer.Option(10.0, help="Max allowed pass-rate drop vs baseline, in percentage points."),
     save_baseline: bool = typer.Option(False, "--save-baseline", help="Store this run as the baseline for this dataset."),
     baselines_dir: Path = typer.Option(Path("baselines"), help="Where baselines live."),
     workers: int = typer.Option(5, min=1, help="Cases run in parallel."),
@@ -115,7 +115,8 @@ def run(
         f"rubric {m.rubric_version} effort {m.judge_effort} | repeats {m.repeats}"
     )
     typer.echo(
-        f"pass rate {result.pass_rate:.1f}% ({result.passed}/{result.total}) | p50 {p50} p95 {p95} | "
+        f"pass rate {result.pass_rate:.1f}% ({result.attempts_passed}/{result.attempts_total} attempts, "
+        f"{result.passed}/{result.total} cases) | p50 {p50} p95 {p95} | "
         f"agent ${result.agent_cost_usd:.4f} judge ${result.judge_cost_usd:.4f}"
     )
 

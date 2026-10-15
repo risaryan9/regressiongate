@@ -261,6 +261,33 @@ def test_different_repeats_are_not_comparable():
         compare(run_with(repeats=3), run_with(repeats=1), 5.0, Budgets())
 
 
+def test_pass_rate_is_per_attempt():
+    run = run_with(wrong=["asks_for_human"], repeats=3)
+    assert run.attempts_total == 75 and run.attempts_passed == 72
+    assert run.pass_rate == pytest.approx(96.0)
+
+
+def test_old_scoring_baseline_is_not_comparable():
+    baseline = run_with()
+    baseline.meta.scoring_version = 1
+    with pytest.raises(NotComparable, match="scoring v1"):
+        compare(run_with(), baseline, 5.0, Budgets())
+
+
+def test_different_rubric_is_not_comparable():
+    baseline = run_with()
+    baseline.meta.rubric_version = "v0"
+    with pytest.raises(NotComparable, match="rubric v0"):
+        compare(run_with(), baseline, 5.0, Budgets())
+
+
+def test_different_judge_effort_is_not_comparable():
+    baseline = run_with()
+    baseline.meta.judge_effort = "medium"
+    with pytest.raises(NotComparable, match="effort medium"):
+        compare(run_with(), baseline, 5.0, Budgets())
+
+
 def test_budgets_fail_even_without_regression():
     run = run_with()
     tight = Budgets(max_total_cost_usd=0.0, max_p95_latency_ms=-1)
