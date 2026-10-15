@@ -1,5 +1,6 @@
 """rgate: command-line entry point for the RegressionGate harness."""
 
+import os
 from pathlib import Path
 
 import typer
@@ -76,6 +77,7 @@ def run(
     require_baseline: bool = typer.Option(
         False, "--require-baseline", help="Fail if this dataset version has no baseline. CI should set this."
     ),
+    report: Path = typer.Option(None, help="Also write a Markdown summary here (CI posts it as a PR comment)."),
 ) -> None:
     """Run the dataset through the agent, score it, and compare against the baseline."""
     # Imported here so `rgate trace` / `rgate validate` work without an API key or network.
@@ -90,6 +92,11 @@ def run(
         save_result,
     )
     from evals.checks import Budgets
+    from evals.report import render_markdown
+
+    def write_report(baseline, cmp, error=None) -> None:
+        if report:
+            report.write_text(render_markdown(result, baseline, cmp, error=error, traces_hint=os.environ.get("RGATE_TRACES_HINT")))
 
     budgets = Budgets()
     try:
@@ -134,11 +141,14 @@ def run(
     try:
         cmp = compare(result, baseline, threshold, budgets, require_baseline=require_baseline)
     except NotComparable as e:
+        write_report(baseline, None, error=str(e))
         typer.echo(f"✗ cannot compare: {e}", err=True)
         raise typer.Exit(2)
+    write_report(baseline, cmp)
 
-    if baseline is None and not require_baseline:
-        typer.echo("no baseline for this dataset version yet; save one with --save-baseline")
+    if baseline is None:
+        if not require_baseline:
+            typer.echo("no baseline for this dataset version yet; save one with --save-baseline")
     else:
         typer.echo(f"vs baseline {baseline.meta.run_id}: {baseline.pass_rate:.1f}% -> {result.pass_rate:.1f}% ({cmp.pass_rate_delta:+.1f})")
         if cmp.newly_failing:
