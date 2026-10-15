@@ -41,114 +41,144 @@ The agent under test is a small customer-support bot on purpose. **The harness i
 
 ## The demo: red → trace → green
 
-This is a real run on this repo ([PR #4](https://github.com/risaryan9/regressiongate/pull/4)).
-Someone "simplifies" the support agent's system prompt. The unit tests still pass, because they
-never call the model. Only the eval can tell that the agent is now broken.
+A real run on this repo ([PR #4](https://github.com/risaryan9/regressiongate/pull/4)). Someone edits one
+rule in the support agent's prompt. The unit tests still pass, because they never call the model.
+**Only the eval notices that the agent got worse.**
 
-### Step 1: Change the prompt
+| Step | What happens | Result |
+|:---:|---|---|
+| **1** | [Break the prompt](#step-1--break-the-prompt) | A one-line change in a pull request |
+| **2** | [CI goes red](#step-2--ci-goes-red) | Pass rate **74.7% → 28.0%**, merge blocked |
+| **3** | [Find the cause](#step-3--find-the-cause) | The trace shows one tool call that never happened |
+| **4** | [Fix it](#step-4--fix-it) | Pass rate back to **77.3%**, merge allowed |
 
-The PR replaces one rule. Before, the agent had to check the refund policy. Now it approves everything.
+<br>
 
-![The PR diff: prompt version bumped and the refund rule replaced](docs/images/demo-1-break-diff.png)
+---
 
-1. By convention, every prompt change bumps `PROMPT_VERSION`, so each eval result is tied to the exact prompt.
-2. The refund rule now tells the agent to skip `check_refund_policy` and approve every refund.
+### Step 1 · Break the prompt
 
-As soon as the PR opens, the `eval` check starts. It is a **required** check, so the merge
-button stays disabled until it passes.
+The pull request replaces the rule that makes the agent check the refund policy.
 
-![The eval check running, marked Required, merge disabled](docs/images/demo-2-ci-running.png)
+![The pull request diff: the prompt version goes from v1 to v2, and the refund rule is replaced](docs/images/demo-1-break-diff.png)
 
-### Step 2: CI goes red
+| | What to look at |
+|:---:|---|
+| **1** | The prompt version goes from `v1` to `v2`, so every result can be traced back to the exact prompt. |
+| **2** | Old rule: *check the refund policy before deciding*. New rule: *never check it, approve everything*. |
 
-About a minute later, the bot posts its verdict on the PR.
+As soon as the PR opens, the **`eval`** check starts. It's a *required* check, so the merge button stays
+disabled until it passes.
 
-![PR comment: FAIL, reasons, pass rate drop, failed required check](docs/images/demo-3-pr-comment-fail.png)
+![The eval check running on the pull request, marked Required, with the merge button disabled](docs/images/demo-2-ci-running.png)
 
-1. **Verdict:** FAIL.
-2. **Why it failed:** the pass rate dropped 46.7 points (more than the 10-point threshold), and
-   **9 cases went from passing 3/3 in the baseline to 0/3**. These "hard regressions" fail the
-   run even on their own.
-3. **74.7% → 28.0%** of attempts passed (25 cases × 3 repeats = 75 attempts).
-4. **The required check failed**, so GitHub blocks the merge.
+<br>
 
-Expand the failing cases and every row says what went wrong, with a **trace ID** for each:
+---
 
-![Failing cases table with votes, trace IDs and reasons](docs/images/demo-4-failing-cases.png)
+### Step 2 · CI goes red
 
-1. `deny_changed_mind_a1002`: the customer changed their mind 56 days after delivery, so the
-   correct answer is a denial. The agent **refunded it and never called `check_refund_policy`**.
-2. Every case links to a trace ID that you can open with `rgate trace`.
+About a minute later the bot posts its verdict on the pull request.
 
-The workflow itself shows how the failure turns into a red check:
+![The bot's comment: FAIL, the reasons, the pass-rate table, and the failed required check](docs/images/demo-3-pr-comment-fail.png)
 
-![Actions run: Run evals step and the final failing step](docs/images/demo-5-actions-run.png)
+| | What to look at |
+|:---:|---|
+| **1** | **FAIL.** |
+| **2** | **Why:** the pass rate fell by 46.7 points (the limit is 10), and 9 cases that used to pass every time now fail every time. |
+| **3** | **74.7% → 28.0%** of the 75 attempts passed (25 test cases, each run 3 times). |
+| **4** | The required check failed, so GitHub blocks the merge. |
 
-1. `Run evals` runs the whole dataset. It **saves** the exit code instead of stopping, so the
-   PR comment and the traces still get posted.
-2. The last step fails the job with that exit code. `rgate run` exited with **1**, which means a
-   regression. Any non-zero exit makes the check red.
+Open the list of failing cases to see what went wrong in each one:
 
-### Step 3: Trace the exact step that broke
+![The failing cases table, with votes, trace IDs and reasons](docs/images/demo-4-failing-cases.png)
 
-Every agent run is recorded as a tree of **spans**: the case, the agent run, each LLM call and
-each tool call. CI uploads the trace database as an artifact (`eval-traces`), and `rgate trace`
-prints it.
+| | What to look at |
+|:---:|---|
+| **1** | `deny_changed_mind_a1002`: the customer changed their mind after 56 days, so the right answer is *no refund*. The agent refunded anyway and never checked the policy. |
+| **2** | Every case has a **trace ID**, which is used in step 3. |
 
-Here is the same case with the broken prompt and with the good one. (Reproduced locally with
-the same prompts and the same eval code path; the IDs differ from the CI run, the shape does not.)
+<details>
+<summary><b>Behind the scenes:</b> how a failed eval turns the check red</summary>
+<br>
 
-**Broken prompt:**
+![The GitHub Actions run: the Run evals step, then the step that fails the job](docs/images/demo-5-actions-run.png)
+
+| | What to look at |
+|:---:|---|
+| **1** | `Run evals` runs all the test cases. It saves the exit code instead of stopping, so the comment and the traces still get posted. |
+| **2** | The last step fails the job with that exit code. `1` means a regression. Any non-zero exit makes the check red. |
+
+</details>
+
+<br>
+
+---
+
+### Step 3 · Find the cause
+
+Every run of the agent is saved as a tree of steps: each model call and each tool call. `rgate trace` prints
+that tree for one trace ID. Here is the same test case with the broken prompt and with the good one:
+
+**❌ Broken prompt**: the agent looks up the order, then answers straight away.
 
 ```
 $ uv run rgate trace 69156ee0
 eval  eval.case  3,838ms  ERROR hard check failed: action, must_call
 └── agent agent.run  3,836ms  1,839 in / 172 out  $0.00027
     ├── llm   llm.call  2,629ms  836 in / 102 out  $0.00013
-    ├── tool  lookup_order  0ms  → {"found":true,"order_id":"A1002","item":"Coffee grinder","total":45.0,"status":…
+    ├── tool  lookup_order  0ms  → {"found":true,"order_id":"A1002","item":"Coffee grinder",…}
     └── llm   llm.call  1,184ms  1,003 in / 70 out  $0.00014
 ```
 
-> Agent reply: *"Your refund for order A1002 (coffee grinder, $45.00) has been approved."* ❌
+> *"Your refund for order A1002 (coffee grinder, $45.00) has been approved."*
 
-**Good prompt:**
+**✅ Good prompt**: the agent checks the refund policy before answering.
 
 ```
 └── agent agent.run  3,210ms  2,907 in / 248 out  $0.00041
     ├── llm   llm.call  1,083ms  848 in / 53 out  $0.00011
-    ├── tool  lookup_order  0ms  → {"found":true,"order_id":"A1002","item":"Coffee grinder","total":45.0,"status":…
+    ├── tool  lookup_order  0ms  → {"found":true,"order_id":"A1002","item":"Coffee grinder",…}
     ├── llm   llm.call  982ms  966 in / 96 out  $0.00014
     ├── tool  check_refund_policy  0ms  → {"eligible":false,"why":"outside 30-day window (56 days)"}
     └── llm   llm.call  1,141ms  1,093 in / 99 out  $0.00016
 ```
 
-> Agent reply: *"…order A1002 was delivered on August 20, 2026, and is outside our 30-day refund window…, so I can't refund it."* ✅
+> *"…order A1002 was delivered on August 20, 2026, and is outside our 30-day refund window…, so I can't refund it."*
 
-The difference is one missing span: **`check_refund_policy` never ran**. That is the root cause,
-found in seconds instead of by reading logs.
+**The cause in one line:** `check_refund_policy` never ran.
 
-To do this with the real CI traces: download `eval-traces` from the workflow run, unzip it, and run
-`uv run rgate trace <id from the PR comment> --db traces.db`.
+<sub>These two traces were reproduced locally with the same prompts and the same eval code, so the IDs differ
+from the CI run. To open the real CI traces, download the `eval-traces` artifact from the workflow run and run
+`uv run rgate trace <id from the PR comment> --db traces.db`.</sub>
 
-### Step 4: Fix it, CI goes green
+<br>
 
-The fix restores the rule and bumps the prompt again (`v3`, so this result is never confused with `v1`).
+---
 
-![Fix diff: v2 to v3, refund rule restored](docs/images/demo-6-fix-diff.png)
+### Step 4 · Fix it
 
-CI re-runs on the same PR. The bot **edits its existing comment** instead of adding a new one:
+The fix puts the rule back, and bumps the prompt version again to `v3`, so this result is never mixed up with `v1`.
 
-![PR comment: PASS, same comment edited, required check passed, merge enabled](docs/images/demo-7-pr-comment-pass.png)
+![The fix diff: the prompt version goes from v2 to v3, and the refund rule is restored](docs/images/demo-6-fix-diff.png)
 
-1. **Verdict:** PASS.
-2. **Same comment, edited:** the PR doesn't fill up with stale results.
-3. **77.3%, +2.7 vs baseline:** back to normal. Small ups and downs like this are expected run-to-run noise.
-4. **Required check passed.**
-5. **Merge enabled.**
+CI runs again on the same pull request. Instead of adding a new comment, the bot **updates its first one**:
 
-And the PR's history tells the whole story:
+![The same comment, now PASS, with the required check passed and the merge button enabled](docs/images/demo-7-pr-comment-pass.png)
 
-![Actions history: red run then green run on the same branch](docs/images/demo-8-actions-history.png)
+| | What to look at |
+|:---:|---|
+| **1** | **PASS.** |
+| **2** | The same comment, edited, so the PR doesn't fill up with old results. |
+| **3** | **77.3%**, 2.7 points above the baseline. Small ups and downs like this are normal run-to-run noise. |
+| **4** | The required check passed. |
+| **5** | The merge button is enabled. |
+
+The pull request's history tells the whole story in two lines:
+
+![The workflow history: a red run when the PR was opened, then a green run after the fix](docs/images/demo-8-actions-history.png)
+
+<br>
 
 ---
 
@@ -384,17 +414,17 @@ The third-party `setup-uv` action is pinned to a commit SHA.
 
 1. Add the repo secret `ANTHROPIC_API_KEY` (Settings → Secrets and variables → Actions).
 
-   ![Repository secret](docs/screenshots/01-repo-secret.png)
+   ![Repository secret](docs/images/setup-1-repo-secret.png)
 
 2. Open a PR once so the `eval` check exists. Then protect `main` (Settings → Branches): require a PR,
    require the **`eval`** status check, turn off "require approvals" if you work alone, and turn on
    **"Do not allow bypassing"** so even admins can't merge a red PR.
 
-   ![Branch protection rule on main](docs/screenshots/02-branch-protection.png)
+   ![Branch protection rule on main](docs/images/setup-2-branch-protection.png)
 
 3. Every PR now gets the check and the comment:
 
-   ![The first CI PR, passing](docs/screenshots/03-ci-merged-pr.png)
+   ![The first CI PR, passing](docs/images/setup-3-first-ci-pr.png)
 
 ---
 
