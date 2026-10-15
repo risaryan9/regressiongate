@@ -31,3 +31,8 @@ venv/
 
 # Trace database
 *.db
+
+# Eval run results (baselines/ is committed, runs/ is not)
+runs/
+*.db-wal
+*.db-shm
