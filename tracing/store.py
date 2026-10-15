@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 DEFAULT_DB = os.environ.get("TRACE_DB", "traces.db")
 
-SpanKind = Literal["agent", "llm", "tool", "judge"]
+SpanKind = Literal["eval", "agent", "llm", "tool", "judge"]
 
 
 class Span(BaseModel):
@@ -46,11 +46,14 @@ class TraceStore:
     def __init__(self, path: str = DEFAULT_DB):
         self.path = path
         with self._connect() as conn:
+            # WAL lets parallel eval workers write spans without blocking readers, and is much faster per insert.
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(_SCHEMA)
 
     def _connect(self) -> sqlite3.Connection:
         # A fresh connection per call keeps this safe if spans are saved from several threads.
-        conn = sqlite3.connect(self.path)
+        conn = sqlite3.connect(self.path, timeout=30)
+        conn.execute("PRAGMA synchronous=NORMAL")  # safe with WAL; a crash loses at most the last few spans
         conn.row_factory = sqlite3.Row
         return conn
 
