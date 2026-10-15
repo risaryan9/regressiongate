@@ -85,7 +85,7 @@ def test_cost_and_latency_budgets():
 def make_judge(tmp_path, verdict: Verdict) -> tuple[LLMJudge, list]:
     """An LLMJudge whose API call is replaced by a stub that counts calls."""
     judge = LLMJudge.__new__(LLMJudge)
-    judge.model, judge.rubric_version = "claude-sonnet-5-5", "v1"
+    judge.model, judge.rubric_version, judge.effort = "claude-sonnet-5-5", "v1", "high"
     judge.cache = JudgeCache(str(tmp_path / "cache.db"))
     calls = []
     judge._call = lambda prompt: (calls.append(prompt), (verdict, 0.01))[1]
@@ -105,6 +105,14 @@ def test_judge_cache_misses_when_reply_changes(tmp_path):
     judge, calls = make_judge(tmp_path, Verdict(reason="ok", score=5, passed=True))
     judge.judge(CASE, make_result())
     judge.judge(CASE, make_result(order_id="A1001 "))  # different output text -> different key
+    assert len(calls) == 2
+
+
+def test_judge_cache_misses_when_effort_changes(tmp_path):
+    judge, calls = make_judge(tmp_path, Verdict(reason="ok", score=5, passed=True))
+    judge.judge(CASE, make_result())
+    judge.effort = "medium"
+    judge.judge(CASE, make_result())
     assert len(calls) == 2
 
 
@@ -140,7 +148,7 @@ class FakeAgent:
 
 
 class FakeJudge:
-    model, rubric_version = "fake-judge", "v1"
+    model, rubric_version, effort = "fake-judge", "v1", "high"
 
     def __init__(self):
         self.calls = 0

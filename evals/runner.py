@@ -27,6 +27,7 @@ from tracing.trace import current_trace_id, mark_error, run_scope, trace
 class Judge(Protocol):
     model: str
     rubric_version: str
+    effort: str
 
     def judge(self, case: Case, result: AgentResult) -> JudgeResult: ...
 
@@ -69,6 +70,7 @@ class RunMeta(BaseModel):
     agent_model: str
     judge_model: str
     rubric_version: str
+    judge_effort: str = "medium"  # baselines saved before this field existed used medium
     repeats: int
 
 
@@ -153,6 +155,7 @@ def run_dataset(
             agent_model=agent_meta.get("model", "unknown"),
             judge_model=judge.model,
             rubric_version=judge.rubric_version,
+            judge_effort=judge.effort,
             repeats=repeats,
         ),
         pass_rate=100 * passed / len(outcomes) if outcomes else 0.0,

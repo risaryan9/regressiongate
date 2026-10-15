@@ -15,6 +15,8 @@ JUDGE_MODEL = "claude-sonnet-5-5"
 # Bump on any change to RUBRIC, so cached verdicts from the old rubric are not reused.
 RUBRIC_VERSION = "v2"
 PASS_SCORE = 3
+# Part of the cache key and run metadata: a different effort can give different verdicts.
+JUDGE_EFFORT = "high"
 
 RUBRIC = """You grade replies written by a customer-support agent for an online store.
 
@@ -88,10 +90,11 @@ class LLMJudge:
         self.model = model
         self.cache = cache or JudgeCache()
         self.rubric_version = RUBRIC_VERSION
+        self.effort = JUDGE_EFFORT
 
     def judge(self, case: Case, result: AgentResult) -> JudgeResult:
         prompt = render_input(case, result)
-        key = cache_key(case, prompt, RUBRIC_VERSION, self.model)
+        key = cache_key(case, prompt, RUBRIC_VERSION, self.model, self.effort)
         hit = self.cache.get(key)
         if hit is not None:
             verdict = Verdict.model_validate_json(hit)
@@ -106,8 +109,8 @@ class LLMJudge:
         resp = self.client.messages.parse(
             model=self.model,
             max_tokens=4096,
-            # Grading against explicit rules doesn't need deep thinking; medium keeps it cheaper.
-            output_config={"effort": "medium"},
+            # high over medium: measured ~8% more cost, aimed at steadier verdicts on edge cases.
+            output_config={"effort": self.effort},
             system=RUBRIC,
             messages=[{"role": "user", "content": prompt}],
             output_format=Verdict,

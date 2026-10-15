@@ -112,7 +112,7 @@ def run(
     p95 = f"{result.p95_latency_ms:,.0f}ms" if result.p95_latency_ms is not None else "-"
     typer.echo(
         f"\n{m.dataset} v{m.dataset_version} | prompt {m.prompt_version} | {m.agent_model} | judge {m.judge_model} "
-        f"rubric {m.rubric_version} | repeats {m.repeats}"
+        f"rubric {m.rubric_version} effort {m.judge_effort} | repeats {m.repeats}"
     )
     typer.echo(
         f"pass rate {result.pass_rate:.1f}% ({result.passed}/{result.total}) | p50 {p50} p95 {p95} | "
