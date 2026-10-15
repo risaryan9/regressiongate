@@ -30,18 +30,23 @@ jobs:
         with:
           fetch-depth: 0 # full history, so `rgate validate --base origin/main` can see main's manifest
 
-      - uses: astral-sh/setup-uv@v6
+      # Third-party action pinned to a commit, so a moved or hijacked tag can't change what runs.
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           python-version: "3.12"
 
       - name: Install
-        run: uv sync --locked
+        # --locked: exact versions from uv.lock. --no-build: wheels only, so no package setup
+        # scripts run. Our own code isn't installed as a package; commands run `python cli.py`.
+        run: |
+          uv sync --locked --no-build --no-install-project
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Unit tests
-        run: uv run pytest -q
+        run: python -m pytest -q
 
       - name: Validate dataset
-        run: uv run rgate validate datasets/support --base origin/${{ github.base_ref || 'main' }}
+        run: python cli.py validate datasets/support --base origin/${{ github.base_ref || 'main' }}
 
       - name: Check API key
         run: |
@@ -55,7 +60,7 @@ jobs:
         run: |
           # Keep going on failure so the comment and artifacts still get posted; the last step fails the job.
           set +e
-          uv run rgate run --repeats 3 --require-baseline --report report.md 2>&1 | tee eval.log
+          python cli.py run --repeats 3 --require-baseline --report report.md 2>&1 | tee eval.log
           echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Comment on PR
