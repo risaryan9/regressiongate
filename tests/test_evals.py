@@ -227,6 +227,21 @@ def test_one_flip_is_within_threshold_two_is_not():
     assert two.failed and "pass rate dropped 8.0 points" in two.reasons[0]
 
 
+def test_hard_regression_fails_even_when_pass_rate_rises():
+    baseline = run_with(wrong=["asks_for_human", "legal_threat_a1003"], repeats=3)
+    # One solid case breaks while two others recover: pass rate goes up, but it must still fail.
+    run = run_with(wrong=["refund_damaged_a1001"], repeats=3)
+    cmp = compare(run, baseline, 5.0, Budgets())
+    assert cmp.pass_rate_delta > 0
+    assert cmp.failed
+    assert cmp.reasons == ["hard regression: refund_damaged_a1001 passed 3/3 in baseline, now 0/3"]
+
+
+def test_hard_regression_rule_off_with_one_repeat():
+    cmp = compare(run_with(wrong=["refund_damaged_a1001"]), run_with(), 5.0, Budgets())
+    assert not cmp.failed  # a single-repeat flip could be noise; the 5-point rule handles it
+
+
 def test_improvement_is_reported():
     baseline = run_with(wrong=["asks_for_human"])
     cmp = compare(run_with(), baseline, 5.0, Budgets())

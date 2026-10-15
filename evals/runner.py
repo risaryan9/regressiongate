@@ -252,6 +252,19 @@ def compare(
 
     before, after = baseline.case_passed(), run.case_passed()
     common = [cid for cid in after if cid in before]
+
+    # A noisy case drifts 1/3 <-> 2/3; going from all-pass to all-fail is a real break even
+    # when other cases improved by luck and the pass rate looks fine. Needs >1 repeat to mean anything.
+    if run.meta.repeats > 1:
+        base_attempts = {c.case_id: c.attempts for c in baseline.cases}
+        for case in run.cases:
+            old = base_attempts.get(case.case_id)
+            if old and all(a.passed for a in old) and not any(a.passed for a in case.attempts):
+                reasons.append(
+                    f"hard regression: {case.case_id} passed {len(old)}/{len(old)} in baseline, "
+                    f"now 0/{len(case.attempts)}"
+                )
+
     return Comparison(
         failed=bool(reasons),
         reasons=reasons,
