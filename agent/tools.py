@@ -2,6 +2,8 @@
 
 from datetime import date
 
+from tracing.trace import trace
+
 # Fixed "today" so refund-window answers don't drift as real time passes.
 TODAY = date(2026, 10, 15)
 REFUND_WINDOW_DAYS = 30
@@ -16,6 +18,7 @@ ORDERS = {
 _escalations: list[dict] = []
 
 
+@trace(kind="tool")
 def lookup_order(order_id: str) -> dict:
     order = ORDERS.get(order_id.strip().upper())
     if order is None:
@@ -23,6 +26,7 @@ def lookup_order(order_id: str) -> dict:
     return {"found": True, "order_id": order_id.upper(), **order}
 
 
+@trace(kind="tool")
 def check_refund_policy(order_id: str, reason: str) -> dict:
     order = ORDERS.get(order_id.strip().upper())
     if order is None:
@@ -37,6 +41,7 @@ def check_refund_policy(order_id: str, reason: str) -> dict:
     return {"eligible": False, "why": f"outside {REFUND_WINDOW_DAYS}-day window ({days} days)"}
 
 
+@trace(kind="tool")
 def escalate(summary: str, priority: str = "normal") -> dict:
     ticket_id = f"ESC-{len(_escalations) + 1:04d}"
     _escalations.append({"id": ticket_id, "summary": summary, "priority": priority})

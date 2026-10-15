@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from agent.prompts import PROMPT_VERSION, SYSTEM_PROMPT
 from agent.protocol import AgentResult, TicketResponse, ToolCall
 from agent.tools import TOOL_FUNCS, TOOL_SCHEMAS
+from tracing.trace import current_trace_id, mark_error, set_tokens, trace
 
 DEFAULT_MODEL = "claude-haiku-5-5"
 
@@ -18,6 +19,7 @@ class SupportAgent:
         self.model = model
         self.max_turns = max_turns
 
+    @trace(kind="agent", name="agent.run")
     def run(self, ticket: str) -> AgentResult:
         messages: list[dict] = [{"role": "user", "content": ticket}]
         tool_calls: list[ToolCall] = []
@@ -25,14 +27,7 @@ class SupportAgent:
         text = ""
 
         for _ in range(self.max_turns):
-            resp = self.client.messages.create(
-                model=self.model,
-                # Haiku 5.5 thinks by default; leave room so the final JSON isn't truncated.
-                max_tokens=4096,
-                system=SYSTEM_PROMPT,
-                tools=TOOL_SCHEMAS,
-                messages=messages,
-            )
+            resp = self._call_model(messages)
             tokens_in += resp.usage.input_tokens
             tokens_out += resp.usage.output_tokens
             messages.append({"role": "assistant", "content": resp.content})
@@ -55,6 +50,19 @@ class SupportAgent:
         response, error = self._parse(text)
         return self._result(ticket, response, text, tool_calls, tokens_in, tokens_out, error)
 
+    @trace(kind="llm", name="llm.call")
+    def _call_model(self, messages: list[dict]):
+        resp = self.client.messages.create(
+            model=self.model,
+            # Haiku 5.5 thinks by default; leave room so the final JSON isn't truncated.
+            max_tokens=4096,
+            system=SYSTEM_PROMPT,
+            tools=TOOL_SCHEMAS,
+            messages=messages,
+        )
+        set_tokens(self.model, resp.usage.input_tokens, resp.usage.output_tokens)
+        return resp
+
     @staticmethod
     def _call_tool(name: str, args: dict) -> dict:
         func = TOOL_FUNCS.get(name)
@@ -74,8 +82,13 @@ class SupportAgent:
             return None, f"invalid JSON output: {e.errors()[0]['msg']}"
 
     def _result(self, ticket, response, text, tool_calls, tokens_in, tokens_out, error) -> AgentResult:
+        # Must be called inside run(): totals go on the agent span, and errors mark it failed.
+        set_tokens(self.model, tokens_in, tokens_out)
+        if error:
+            mark_error(error)
         return AgentResult(
             ticket=ticket,
+            trace_id=current_trace_id(),
             response=response,
             raw_output=text,
             tool_calls=tool_calls,

@@ -21,6 +21,7 @@ class ToolCall(BaseModel):
 
 class AgentResult(BaseModel):
     ticket: str
+    trace_id: str | None = None  # look up with `rgate trace <id>`
     response: TicketResponse | None  # None when the model's final text wasn't valid JSON
     raw_output: str
     tool_calls: list[ToolCall] = []
