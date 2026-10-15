@@ -47,7 +47,7 @@ tracing/
   stats.py        # percentiles (p50/p95 latency)
 datasets/
   schema.py       # Pydantic models for cases + manifest
-  support_v1/     # cases.jsonl + manifest.json
+  support/        # cases.jsonl + manifest.json (version lives in the manifest; git keeps old versions)
 evals/
   checks.py       # deterministic checks
   judge.py        # LLM-as-judge (rubric, temperature 0, score + reason)
@@ -99,9 +99,10 @@ You can fully write: CLI wiring, Pydantic models, seed data, fake tool data, SQL
 ```bash
 uv sync                               # install
 uv run pytest                         # unit tests
-uv run rgate validate datasets/support_v1
-uv run rgate run --dataset datasets/support_v1
+uv run rgate validate datasets/support
+uv run rgate bump datasets/support      # after editing cases.jsonl
+uv run rgate run --dataset datasets/support
 uv run rgate trace <trace_id>
-uv run rgate promote <trace_id> --to datasets/support_v2
+uv run rgate promote <trace_id> --to datasets/support   # appends the case, then bump
 uv run rgate diff <run_a> <run_b>
 ```
