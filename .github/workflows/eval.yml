@@ -1,0 +1,87 @@
+name: eval
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: # lets you start a run by hand from the Actions tab
+
+# A new push to the same PR cancels the old run, so you only pay for the latest commit.
+concurrency:
+  group: eval-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write # to post the results comment
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      RGATE_TRACES_HINT: >-
+        Traces: download the <code>eval-traces</code> artifact from this
+        <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}">workflow run</a>,
+        then <code>uv run rgate trace &lt;id&gt; --db traces.db</code>.
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history, so `rgate validate --base origin/main` can see main's manifest
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: uv sync --locked
+
+      - name: Unit tests
+        run: uv run pytest -q
+
+      - name: Validate dataset
+        run: uv run rgate validate datasets/support --base origin/${{ github.base_ref || 'main' }}
+
+      - name: Check API key
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set (or this PR is from a fork, which can't read secrets)."
+            exit 1
+          fi
+
+      - name: Run evals
+        id: eval
+        run: |
+          # Keep going on failure so the comment and artifacts still get posted; the last step fails the job.
+          set +e
+          uv run rgate run --repeats 3 --require-baseline --report report.md 2>&1 | tee eval.log
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on PR
+        if: always() && github.event_name == 'pull_request' && hashFiles('report.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Update our previous comment if there is one, so the PR doesn't fill up with old results.
+          gh pr comment ${{ github.event.pull_request.number }} --edit-last --body-file report.md \
+            || gh pr comment ${{ github.event.pull_request.number }} --body-file report.md
+
+      - name: Upload traces and run results
+        if: always() && steps.eval.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-traces
+          path: |
+            traces.db*
+            runs/
+            report.md
+            eval.log
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Fail if the eval failed
+        if: steps.eval.outputs.code != '0'
+        run: |
+          echo "rgate run exited with code ${{ steps.eval.outputs.code }} (1 = regression or budget, 2 = not comparable)"
+          exit 1
